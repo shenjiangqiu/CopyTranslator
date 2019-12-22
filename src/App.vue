@@ -1,17 +1,18 @@
+npm
 <template>
-  <div id="app">
+  <div id="app" class="application">
     <router-view />
   </div>
 </template>
 
-<script>
-export default {
-  name: "App"
-};
+<script lang="ts">
+import { Component } from "vue-property-decorator";
+import Vue from "vue";
+@Component
+export default class App extends Vue {}
 </script>
 <style>
 #app {
-  font-family: "Avenir", Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-align: center;
@@ -20,6 +21,7 @@ export default {
 
 body {
   margin: 0%;
+  overflow: hidden;
 }
 
 #nav {

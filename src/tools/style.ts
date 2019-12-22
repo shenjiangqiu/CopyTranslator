@@ -1,12 +1,14 @@
-import { envConfig } from "./envConfig";
+import { env } from "./env";
+import fs from "fs";
 
-var fs = require("fs");
+const defaultStyles = `
+.application{ /*在这里设置整个应用的字体*/
+    font-family: "微软雅黑","PingHei";
+}
 
-function loadStyles(): string {
-  const defaultStyles = `
 .focusText {
     /*modify the style of the focus result textarea*/
-    font-family: Monaco; /*设置专注模式的字体为 Monaco*/
+    /*font-family: Monaco;*/ /*设置专注模式的字体为 Monaco*/
 }
 
 .contrastText {
@@ -17,16 +19,24 @@ function loadStyles(): string {
 .contrast {
     /*modify the style of the contrast mode panel*/
 }
-
-.statusBar {
-
-}
 `;
+
+let loadedStyles: undefined | string;
+
+export function resetStyle() {
+  fs.writeFileSync(env.style, defaultStyles);
+}
+
+function loadStyles(): string {
+  if (loadedStyles) {
+    return loadedStyles;
+  }
   try {
-    let styles = fs.readFileSync(envConfig.sharedConfig.style, "utf-8");
-    return styles.toString();
+    loadedStyles = <string>fs.readFileSync(env.style, "utf-8").toString();
+    return loadedStyles;
   } catch (e) {
-    fs.writeFileSync(envConfig.sharedConfig.style, defaultStyles);
+    resetStyle();
+    loadedStyles = defaultStyles;
     return defaultStyles;
   }
 }

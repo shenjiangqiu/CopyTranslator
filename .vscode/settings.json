@@ -2,7 +2,7 @@
     "explorer.confirmDelete": false,
     "git.autofetch": true,
     "terminal.integrated.rendererType": "dom",
-    "window.zoomLevel": 1,
+    "window.zoomLevel": 0,
     "eslint.alwaysShowStatus": true,
     "eslint.autoFixOnSave": true,
     "eslint.validate": [
@@ -17,5 +17,9 @@
             "autoFix": true
         }
     ],
-    "typescript.updateImportsOnFileMove.enabled": "always"
+    "typescript.updateImportsOnFileMove.enabled": "always",
+    "editor.fontFamily": "Monaco",
+    "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": true
+    }
 }

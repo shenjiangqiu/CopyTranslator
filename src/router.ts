@@ -3,7 +3,7 @@ import Router from "vue-router";
 import Focus from "./views/Focus.vue";
 import Contrast from "./views/Contrast.vue";
 import Settings from "./views/Settings.vue";
-
+import Update from "./views/Update.vue";
 Vue.use(Router);
 
 export default new Router({
@@ -16,17 +16,22 @@ export default new Router({
     },
     {
       path: "/focus",
-      name: "Focus",
+      name: "focus",
       component: Focus
     },
     {
       path: "/contrast",
-      name: "Contrast",
+      name: "contrast",
       component: Contrast
     },
     {
+      path: "/update",
+      name: "update",
+      component: Update
+    },
+    {
       path: "/settings",
-      name: "Settings",
+      name: "settings",
       component: Settings
     }
   ]

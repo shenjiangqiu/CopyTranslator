@@ -10,14 +10,26 @@ export default new Vuex.Store({
       result: "",
       source: "",
       target: "",
-      dict: undefined,
-      phonetic: undefined,
+      engine: "",
       notify: false
+    },
+    dictResult: {
+      valid: false,
+      phonetics: [],
+      explains: [],
+      examples: [],
+      code: 0,
+      engine: "",
+      url: "",
+      words: ""
     }
   },
   mutations: {
     setShared(state, sharedResult) {
       state.sharedResult = sharedResult;
+    },
+    setDictResult(state, dictResult) {
+      state.dictResult = dictResult;
     }
   },
   actions: {}

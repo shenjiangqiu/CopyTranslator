@@ -1,37 +1,35 @@
-enum FrameMode {
-  Contrast,
-  Focus
-}
-
-enum HideDirection {
-  Up,
-  Right,
-  Left,
-  None,
-  Minify
-}
-
-enum YoudaoStatus {
-  Success,
-  Fail
-}
+export const hideDirections = [
+  "Up",
+  "Right",
+  "Left",
+  "None",
+  "Minify"
+] as const;
+export type HideDirection = typeof hideDirections[number];
 
 enum MessageType {
   WindowOpt,
   TranslateResult,
+  DictResult,
   OpenMenu,
   Router,
-  UpdateT
+  UpdateT,
+  FirstLoaded
 }
 
 enum WinOpt {
   Minify,
   Drag,
+  StartDrag,
+  Dragging,
+  EndDrag,
   Resize,
   Zoom,
   OpenExternal,
   ChangeColor,
-  Refresh
+  Refresh,
+  SaveMode,
+  CloseMe
 }
 
 function rgb(r: number, g: number, b: number) {
@@ -58,13 +56,7 @@ const ColorStatus = mkenum({
   IncrementalCopyPaste: rgb(0, 0, 128),
   Fail: rgb(255, 0, 0)
 });
-type ColorStatus = (typeof ColorStatus)[keyof typeof ColorStatus];
 
-export {
-  FrameMode,
-  YoudaoStatus,
-  ColorStatus,
-  MessageType,
-  WinOpt,
-  HideDirection
-};
+type ColorStatus = typeof ColorStatus[keyof typeof ColorStatus];
+
+export { ColorStatus, MessageType, WinOpt };

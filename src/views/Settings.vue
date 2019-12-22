@@ -1,57 +1,40 @@
 <template>
-  <div>
-    <StatusBar></StatusBar>
-    <div
-      v-on:contextmenu="openMenu('Settings')"
-      v-on:dblclick="minify"
-      style="text-align: left;"
-    >
-      <div style="text-align: left;">
-        <Action
-          v-for="actionId in actionKeys"
-          :action-id="actionId"
-          :key="actionId"
-        ></Action>
-      </div>
-      <el-button style="width:100%;" @click="backStored">{{
-        $t("return")
-      }}</el-button>
+  <div style="height:100%; margin: 10px">
+    <div style="height:80%">
+      <el-tabs v-model="activeName">
+        <el-tab-pane :label="$t('options')" name="first">
+          <Options></Options>
+        </el-tab-pane>
+        <el-tab-pane :label="$t('switches')" name="second">
+          <Switches></Switches>
+        </el-tab-pane>
+        <el-tab-pane :label="$t('ocrConfig')" name="third">
+          <OCRConfig></OCRConfig>
+        </el-tab-pane>
+      </el-tabs>
     </div>
   </div>
 </template>
 
-<script>
-import StatusBar from "../components/StatusBar";
-import WindowController from "../components/WindowController";
-import Action from "../components/Action";
+<script lang="ts">
+import WindowController from "../components/WindowController.vue";
+import { shell } from "electron";
+import Options from "./Options.vue";
+import OCRConfig from "./OCRConfig.vue";
+import Switches from "./Switches.vue";
+import Component from "vue-class-component";
+import { Mixins } from "vue-property-decorator";
 
-export default {
-  name: "Settings",
-  mixins: [WindowController],
-  data: function() {
-    return {
-      config: undefined,
-      locale: undefined,
-      locales: this.$controller.locales.getLocales(),
-      routeName: "settingsConfig",
-      actionKeys: Object.keys(this.$controller.action.actions)
-    };
-  },
+@Component({
   components: {
-    Action,
-    StatusBar
-  },
-  beforeRouteEnter(to, from, next) {
-    next(vm => {
-      if (from.name) vm.$controller.win.stored = from.name;
-    });
-  },
-  methods: {
-    backStored() {
-      this.changeMode(this.$controller.win.stored);
-    }
+    Options,
+    OCRConfig,
+    Switches
   }
-};
+})
+export default class Focus extends WindowController {
+  activeName: string = "first";
+}
 </script>
 
 <style scoped></style>

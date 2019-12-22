@@ -1,15 +1,13 @@
 import { raceGet } from "./network";
-import { version, constants } from "../core/constant";
+import { versionString, constants } from "../core/constant";
 import { dialog, nativeImage, shell, BrowserWindow } from "electron";
-import { envConfig } from "./envConfig";
-import { Controller } from "../core/controller";
-import { RuleName } from "./rule";
-const _ = require("lodash");
+import { env } from "./env";
 
 type Button = {
   label: string;
   ref: string;
 };
+
 type Notice = {
   message: string;
   id: string;
@@ -19,21 +17,21 @@ type Notice = {
 export function checkUpdate() {
   raceGet("/version.json")
     .then(res => {
-      if (res && res.data.version > version) {
+      if (res && res.data.version > versionString) {
         const info = res.data;
         const mirror = info.mirrors[res.key];
-        const controller = (<any>global).controller;
+        const controller = global.controller;
         const t = controller.getT();
-        dialog.showMessageBox(
-          <BrowserWindow>controller.win.window,
-          {
+        dialog
+          .showMessageBox(<BrowserWindow>controller.win.window, {
             title: "A newer version is available " + info.version,
             message: info.abstract,
             buttons: [t("toDownload"), t("changelog"), t("cancel")],
-            icon: nativeImage.createFromPath(envConfig.diffConfig.iconPath),
+            icon: nativeImage.createFromPath(env.iconPath),
             cancelId: 2
-          },
-          function(response, checkboxChecked) {
+          })
+          .then(res => res.response)
+          .then(response => {
             switch (response) {
               case 0:
                 shell.openExternal(mirror.installUrl);
@@ -42,8 +40,7 @@ export function checkUpdate() {
                 shell.openExternal(mirror.changelog);
                 break;
             }
-          }
-        );
+          });
       }
     })
     .catch(e => {
@@ -52,9 +49,9 @@ export function checkUpdate() {
 }
 
 export function checkNotice() {
-  const controller = <Controller>(<any>global).controller;
+  const controller = global.controller;
   const t = controller.getT();
-  let notices = controller.get(RuleName.notices);
+  let notices = controller.get<Notice[]>("notices");
   function getButtons(buttons: Array<Button>) {
     let new_buttons = buttons.map(button => button.label);
     new_buttons.push(t("ok"));
@@ -64,23 +61,22 @@ export function checkNotice() {
     .then(res => {
       if (res && notices.indexOf(res.data.id) == -1) {
         notices.push(res.data.id);
-        controller.setByRuleName(RuleName.notices, notices);
+        controller.set("notices", notices);
         const notice = <Notice>res.data;
         if (!notice.buttons) notice.buttons = [];
         const buttons = getButtons(notice.buttons);
-        dialog.showMessageBox(
-          <BrowserWindow>controller.win.window,
-          {
-            title: version,
+        dialog
+          .showMessageBox(<BrowserWindow>controller.win.window, {
+            title: versionString,
             message: notice.message,
             buttons: buttons,
             cancelId: buttons.length - 1,
-            icon: nativeImage.createFromPath(envConfig.diffConfig.iconPath)
-          },
-          function(response, checkboxChecked) {
+            icon: nativeImage.createFromPath(env.iconPath)
+          })
+          .then(res => res.response)
+          .then(response => {
             shell.openExternal(notice.buttons[response].ref);
-          }
-        );
+          });
       }
     })
     .catch(e => {

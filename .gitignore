@@ -30,4 +30,7 @@ src/*/*.js
 src/*.js
 dist
 /package-lock.json
-/yarn.lock
+theme
+.VSCodeCounter
+.token
+publish.sh

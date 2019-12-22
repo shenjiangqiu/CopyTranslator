@@ -1,15 +1,19 @@
 import { Tray, Menu } from "electron";
-import { envConfig } from "./envConfig";
+import { env } from "./env";
 import { constants } from "../core/constant";
+import { Controller } from "../core/controller";
 
 class TrayManager {
   tray: Tray | undefined;
   constructor() {}
   init() {
-    this.tray = new Tray(envConfig.diffConfig.trayIconPath);
+    this.tray = this.tray ? this.tray : new Tray(env.trayIconPath);
     this.tray.setToolTip(constants.appName);
     this.tray.on("right-click", event => {
-      (<any>global).controller.action.popup("Tray");
+      global.controller.action.popup("tray");
+    });
+    this.tray.on("click", event => {
+      global.controller.win.show();
     });
   }
 }

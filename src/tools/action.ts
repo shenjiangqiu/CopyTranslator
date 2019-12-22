@@ -5,47 +5,44 @@ import {
   Menu,
   MenuItem
 } from "electron";
-import { RuleName } from "./rule";
-import { ConfigParser, getEnumValue as r } from "./configParser";
-//r can be used to transform a enum to string
-import { envConfig } from "./envConfig";
-import { HideDirection } from "./enums";
-import { TranslatorType } from "./translation/translators";
-import { defaultShortcuts } from "./shortcuts";
 
-const fs = require("fs");
-const _ = require("lodash");
+import { ConfigParser } from "./configParser";
+import { Language } from "@opentranslate/languages";
+import { env } from "./env";
+import { hideDirections } from "./enums";
+import { translatorTypes } from "./translate/types";
+import {
+  Shortcuts,
+  loadLocalShortcuts,
+  loadGlobalShortcuts
+} from "./shortcuts";
+import { Controller } from "../core/controller";
+import { getLanguageLocales } from "./translate/locale";
+import { Identifier, MenuActionType, Role, roles } from "./types";
+import { dictionaryTypes } from "../tools/dictionary/types";
 
 function compose(actions: Array<string>) {
-  return _.join(actions, "|");
+  return actions.join("|");
 }
 
 function decompose(id: string) {
   return id.split("|");
 }
 
-enum MenuItemType {
-  normal = "normal",
-  separator = "separator",
-  submenu = "submenu",
-  checkbox = "checkbox",
-  radio = "radio"
-}
+type MenuItemType = "normal" | "separator" | "submenu" | "checkbox" | "radio";
 
-enum RouteName {
-  Focus = "Focus",
-  Contrast = "Contrast",
-  Settings = "Settings",
-  Tray = "Tray"
-}
+type ActionType = "constant";
 
-interface Action {
+export interface Action {
   label?: string;
-  type: MenuItemType;
+  type?: MenuItemType;
   checked?: boolean;
+  actionType?: ActionType | MenuItemType;
   id: string;
   submenu?: Array<Action>;
-  role?: string;
+  role?: Role;
+  tooltip?: string;
+  accelerator?: string;
   subMenuGenerator?: () => Array<Action>;
   click?: (
     menuItem: MenuItem,
@@ -54,197 +51,207 @@ interface Action {
   ) => void;
 }
 
+export interface TopAction extends Action {
+  id: Identifier;
+}
+
 function ActionWrapper(
   action: Action,
   callback: Function | undefined = undefined
 ) {
-  const key = action.id;
+  if (action.role) {
+    return action;
+  }
+  if (action.type) {
+    action.actionType = action.type;
+  } else {
+    action.type = "normal";
+  }
   if (!action.click && callback) {
     action.click = function(
       menuItem: MenuItem,
       browserWindow: BrowserWindow,
       event: Event
     ) {
-      callback(key, menuItem, browserWindow, event);
+      callback(action.id, menuItem, browserWindow, event);
     };
   }
   return action;
 }
 
-type Actions = { [key: string]: Action };
-const roles = [
-  "undo",
-  "redo",
-  "cut",
-  "copy",
-  "paste",
-  "pasteAndMatchStyle",
-  "selectAll",
-  "delete",
-  "minimize",
-  "close",
-  "quit",
-  "reload",
-  "forcereload",
-  "toggledevtools",
-  "toggleFullScreen",
-  "resetzoom",
-  "zoomin",
-  "zoomout",
-  "editMenu",
-  "windowMenu"
-];
+type Actions = Map<Identifier, TopAction>;
 
 class ActionManager {
-  actions: Actions = {};
-  shortcuts: { [key: string]: Accelerator } = {};
+  actions = new Map<Identifier, TopAction>();
+  shortcuts: Shortcuts = new Map<Identifier, Accelerator>();
+  localShortcuts = new Map<Identifier, Accelerator>();
   callback: Function;
+  controller: Controller;
 
-  constructor(callback: Function) {
+  constructor(callback: Function, controller: Controller) {
     this.callback = callback;
+    this.controller = controller;
   }
 
   init() {
-    this.actions = this.getActions(
-      (<any>global).controller.config,
-      this.callback
-    );
-    this.loadShortcuts();
+    this.actions = this.getActions(this.controller.config, this.callback);
+    this.shortcuts = loadGlobalShortcuts();
     this.register();
+    this.localShortcuts = loadLocalShortcuts();
+    this.registerLocalShortcuts();
   }
-  getRefresh() {
-    const controller = (<any>global).controller;
+
+  update() {
+    const refresh = this.getRefreshFunc();
+    for (const key of this.actions.keys()) {
+      this.actions.set(key, refresh(key, this.actions.get(key) as TopAction));
+    }
+  }
+
+  getAction(identifier: Identifier): TopAction {
+    const action = <TopAction>this.actions.get(identifier);
+    if (action.subMenuGenerator) {
+      action.submenu = action.subMenuGenerator();
+    }
+    return action;
+  }
+
+  getRefreshFunc() {
+    const controller = this.controller;
     let config = controller.config;
     const t = controller.getT();
-    function refreshSingle(key: string, action: Action): Action {
+
+    function refreshFunc(key: Identifier, action: TopAction): TopAction {
+      action.label = t(key);
       if (action.role) {
-        action.click = undefined;
         return action;
       }
-      action.label = t(key);
-      if (action.type == MenuItemType.checkbox) {
-        action.checked = config.values[key];
+      if (action.actionType == "checkbox") {
+        action.checked = config.get(key);
       }
 
       if (action.subMenuGenerator) {
         action.submenu = action.subMenuGenerator();
       }
+
       if (action.submenu) {
-        const value = config.values[key].toString();
-        for (const key2 in action.submenu) {
-          const param = decompose(action.submenu[key2].id)[1].toString();
-          action.submenu[key2].checked = param == value;
+        const value = config.get(key).toString();
+        for (const i in action.submenu) {
+          const param = decompose(action.submenu[i].id)[1].toString();
+          action.submenu[i].checked = param == value;
         }
       }
       return action;
     }
-    return refreshSingle;
+    return refreshFunc;
   }
 
   getActions(config: ConfigParser, callback: Function): Actions {
-    let items: Array<Action> = [];
+    let items: Array<TopAction> = [];
 
-    function normalAction(id: string) {
+    //普通的按钮，执行一项操作
+    function normalAction(id: Identifier) {
       return ActionWrapper(
         {
-          type: MenuItemType.normal,
-          id: id
+          type: "normal",
+          id: id,
+          tooltip: id
         },
         callback
-      );
+      ) as TopAction;
     }
-    function roleAction(role: string) {
+    //原生角色
+    function roleAction(role: Role) {
       return {
         role: role,
         id: role,
-        type: MenuItemType.normal
-      };
+        type: "normal",
+        tooltip: role
+      } as TopAction;
     }
-
-    function switchAction(ruleName: RuleName) {
-      const id = r(ruleName);
+    //设置常量
+    function constantAction(identifier: Identifier) {
       return ActionWrapper(
         {
-          type: MenuItemType.checkbox,
-          checked: config.values[id],
-          id: id
+          actionType: "constant",
+          id: identifier,
+          tooltip: identifier
         },
         callback
-      );
+      ) as TopAction;
     }
 
-    function enumAction(ruleName: RuleName, type: any) {
-      const id = r(ruleName);
+    //切换状态的动作
+    function switchAction(identifier: Identifier) {
       return ActionWrapper(
         {
-          type: MenuItemType.submenu,
-          id: id,
-          submenu: Object.values(type)
-            .filter(k => (typeof k as any) == "number")
-            .map(e => {
-              return ActionWrapper(
-                {
-                  type: MenuItemType.checkbox,
-                  id: compose([id, (<number>e).toString()]),
-                  label: type[<number>e]
-                },
-                callback
-              );
-            })
+          type: "checkbox",
+          checked: config.get(identifier),
+          id: identifier,
+          tooltip: config.getTooltip(identifier)
         },
         callback
-      );
+      ) as TopAction;
     }
+
+    //列表类型，是select的一种特化
+    function listAction(identifier: Identifier, list: any): TopAction {
+      return ActionWrapper(
+        {
+          type: "submenu",
+          id: identifier,
+          tooltip: config.getTooltip(identifier),
+          submenu: list.map((e: any) => {
+            return ActionWrapper(
+              {
+                type: "checkbox",
+                id: compose([identifier, e.toString()]),
+                label: e
+              },
+              callback
+            );
+          })
+        },
+        callback
+      ) as TopAction;
+    }
+
+    //自动生成子菜单
     function selectAction(
-      ruleName: RuleName,
+      identifier: Identifier,
       subMenuGenerator: () => Array<Action>
     ) {
       return ActionWrapper(
         {
-          type: MenuItemType.submenu,
-          id: r(ruleName),
-          subMenuGenerator: subMenuGenerator
+          type: "submenu",
+          id: identifier,
+          subMenuGenerator: subMenuGenerator,
+          tooltip: config.getTooltip(identifier)
         },
         callback
-      );
+      ) as TopAction;
     }
 
-    items.push(enumAction(RuleName.hideDirect, HideDirection));
-    items.push(enumAction(RuleName.translatorType, TranslatorType));
-    items.push(normalAction("copySource"));
-    items.push(normalAction("copyResult"));
-    items.push(normalAction("clear"));
-    items.push(normalAction("retryTranslate"));
-    items.push(switchAction(RuleName.autoCopy));
-    items.push(switchAction(RuleName.autoPaste));
-    items.push(switchAction(RuleName.autoFormat));
-    items.push(switchAction(RuleName.detectLanguage));
-    items.push(switchAction(RuleName.incrementalCopy));
-    items.push(switchAction(RuleName.autoHide));
-    items.push(switchAction(RuleName.autoShow));
-    items.push(switchAction(RuleName.stayTop));
-    items.push(switchAction(RuleName.listenClipboard));
-    items.push(switchAction(RuleName.tapCopy));
-    items.push(switchAction(RuleName.enableNotify));
-    items.push(normalAction("focusMode"));
-    items.push(normalAction("contrastMode"));
-    items.push(normalAction("restoreDefault"));
-
-    roles.forEach((role: string) => {
-      items.push(roleAction(role));
-    });
-
-    const languageGenerator = (ruleName: RuleName) => {
-      const id = r(ruleName);
+    const createLanguageGenerator = (
+      identifier: Identifier,
+      allowAuto: boolean = true
+    ) => {
       return () => {
-        return (<any>global).controller.translator
-          .getLanguages()
-          .map((e: string) => {
+        const l = getLanguageLocales(<Language>config.get("localeSetting"));
+        return this.controller.translator
+          .getSupportLanguages()
+          .filter(x => {
+            if (!allowAuto && x == "auto") {
+              return false;
+            }
+            return true;
+          })
+          .map(e => {
             return ActionWrapper(
               {
-                id: compose([id, e]),
-                label: e,
-                type: MenuItemType.checkbox
+                id: compose([identifier, e]),
+                label: l[e],
+                type: "checkbox"
               },
               callback
             );
@@ -252,67 +259,134 @@ class ActionManager {
       };
     };
 
-    items.push(
-      selectAction(
-        RuleName.sourceLanguage,
-        languageGenerator(RuleName.sourceLanguage)
-      )
-    );
-    items.push(
-      selectAction(
-        RuleName.targetLanguage,
-        languageGenerator(RuleName.targetLanguage)
-      )
-    );
-
-    const localeGenerator = () => {
-      const id = r(RuleName.localeSetting);
-      return (<any>global).controller.locales
-        .getLocales()
-        .map((locale: any) => {
-          return ActionWrapper(
-            {
-              id: compose([id, locale.short]),
-              label: locale.localeName,
-              type: MenuItemType.checkbox
-            },
-            callback
-          );
-        });
+    const localeGenerator = (id: Identifier) => {
+      const locales = this.controller.l10n.locales.map(locale => {
+        return ActionWrapper(
+          {
+            id: compose([id, locale.lang]),
+            label: locale.localeName,
+            type: "checkbox"
+          },
+          callback
+        );
+      });
+      return () => {
+        return locales;
+      };
     };
-    items.push(selectAction(RuleName.localeSetting, localeGenerator));
+
+    items.push(listAction("hideDirect", hideDirections));
+    items.push(listAction("translatorType", translatorTypes));
+    items.push(listAction("dictionaryType", dictionaryTypes));
+
+    items.push(normalAction("copySource"));
+    items.push(normalAction("copyResult"));
+    items.push(normalAction("clear"));
+    items.push(normalAction("retryTranslate"));
+
+    items.push(switchAction("autoCopy"));
+    items.push(switchAction("autoPaste"));
+    items.push(switchAction("autoFormat"));
+    items.push(switchAction("autoPurify"));
+    items.push(switchAction("incrementalCopy"));
+    items.push(switchAction("smartTranslate"));
+    items.push(switchAction("autoHide"));
+    items.push(switchAction("autoShow"));
+    items.push(switchAction("stayTop"));
+    items.push(switchAction("smartDict"));
+    items.push(switchAction("listenClipboard"));
+    items.push(switchAction("dragCopy"));
+    items.push(switchAction("enableNotify"));
+    items.push(switchAction("skipTaskbar"));
+    items.push(switchAction("closeAsQuit"));
+
+    items.push(normalAction("focus"));
+    items.push(normalAction("contrast"));
+    items.push(normalAction("capture"));
+    items.push(normalAction("restoreDefault"));
+
+    items.push(constantAction("APP_ID"));
+    items.push(constantAction("API_KEY"));
+    items.push(constantAction("SECRET_KEY"));
+
+    //role action
+    roles.forEach(role => {
+      items.push(roleAction(role));
+    });
+
+    items.push(
+      selectAction(
+        "sourceLanguage",
+        createLanguageGenerator("sourceLanguage", true)
+      )
+    );
+    items.push(
+      selectAction(
+        "targetLanguage",
+        createLanguageGenerator("targetLanguage", false)
+      )
+    );
+    items.push(selectAction("localeSetting", localeGenerator("localeSetting")));
 
     items.push(normalAction("settings"));
     items.push(normalAction("helpAndUpdate"));
     items.push(normalAction("exit"));
-    let itemGroup: Actions = {};
-    items.forEach(e => {
-      itemGroup[e.id] = e;
+
+    //下面将数组变为字典
+    let itemGroup: Actions = new Map<Identifier, TopAction>();
+    items.forEach(action => {
+      itemGroup.set(action.id, action);
     });
     return itemGroup;
   }
-  popup(id: RouteName) {
-    let menu = new Menu();
-    let contain: Array<string> = [];
-    const controller = (<any>global).controller;
-    switch (id) {
-      case RouteName.Focus:
-        contain = controller.get(RuleName.focusMenu);
+
+  getKeys(optionType: MenuActionType): Array<Identifier> {
+    let contain: Array<Identifier> = [];
+    const controller = this.controller;
+    const keys: Array<Identifier> = Array.from(this.actions.keys());
+    switch (optionType) {
+      case "allActions":
+        contain = keys;
         break;
-      case RouteName.Contrast:
-        contain = controller.get(RuleName.contrastMenu);
+      case "focusRight":
+        contain = controller.get("focusRight");
         break;
-      case RouteName.Tray:
-        contain = controller.get(RuleName.trayMenu);
+      case "contrastPanel":
+        contain = controller.get("contrastPanel");
         break;
-      case RouteName.Settings:
-        contain = Object.keys(this.actions);
+      case "tray":
+        contain = controller.get("tray");
         break;
+      case "options":
+        contain = keys.filter(x => this.getAction(x).actionType === "submenu");
+        break;
+      case "switches":
+        contain = keys.filter(x => this.getAction(x).actionType === "checkbox");
+        contain.push("restoreDefault");
+        break;
+      case "focusContext":
+        contain = ["copy", "paste", "cut", "clear"];
+        break;
+      case "contrastContext":
+        contain = ["copyResult", "copySource", "copy", "paste", "cut", "clear"];
+        break;
+      case "draggableOptions":
+        contain = keys.filter(x => this.getAction(x).actionType !== "constant");
     }
-    const refresh = this.getRefresh();
-    contain.forEach(key => {
-      menu.append(new MenuItem(refresh(key, this.actions[key])));
-    });
+    return contain;
+  }
+
+  popup(id: MenuActionType) {
+    global.controller.win.show(true);
+    const contain = this.getKeys(id);
+    const refresh = this.getRefreshFunc();
+    const all_keys = this.getKeys("allActions");
+    let menu = new Menu();
+    contain
+      .filter(key => all_keys.includes(key))
+      .forEach(key => {
+        menu.append(new MenuItem(refresh(key, this.getAction(key))));
+      });
     try {
       menu.popup({});
     } catch (e) {
@@ -320,27 +394,13 @@ class ActionManager {
     }
   }
 
-  loadShortcuts() {
-    this.shortcuts = defaultShortcuts;
-    try {
-      this.shortcuts = JSON.parse(
-        fs.readFileSync(envConfig.sharedConfig.shortcut, "utf-8")
-      );
-    } catch (e) {
-      fs.writeFileSync(
-        envConfig.sharedConfig.shortcut,
-        JSON.stringify(defaultShortcuts, null, 4)
-      );
-    }
-  }
-
   register() {
-    Object.keys(this.shortcuts).forEach(key => {
-      const action = this.actions[key];
+    for (const [key, accelerator] of this.shortcuts) {
+      const action = this.getAction(key);
       if (action) {
-        globalShortcut.register(this.shortcuts[key], <Function>action.click);
+        globalShortcut.register(accelerator, <Function>action.click);
       }
-    });
+    }
   }
 
   unregister() {
@@ -348,6 +408,23 @@ class ActionManager {
       globalShortcut.unregister(accelerator);
     });
   }
+
+  registerLocalShortcuts() {
+    let menu = new Menu();
+    const refresh = this.getRefreshFunc();
+    for (const [key, accelerator] of this.localShortcuts.entries()) {
+      let action = this.getAction(key);
+      if (action) {
+        menu.append(
+          new MenuItem({
+            accelerator,
+            ...refresh(key, action)
+          })
+        );
+      }
+    }
+    Menu.setApplicationMenu(menu);
+  }
 }
 
-export { RouteName, ActionManager, MenuItemType, compose, decompose, roles };
+export { ActionManager, MenuItemType, compose, decompose, roles };

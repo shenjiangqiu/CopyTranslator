@@ -1,91 +1,80 @@
-import { Rule, RuleName, ruleKeys } from "./rule";
+import { Rule } from "./rule";
+import { Identifier, mapToObj } from "./types";
+const fs = require("fs");
+import { compatible } from "../core/constant";
+type Rules = Map<Identifier, Rule>; //类型别名
+import { resetStyle } from "./style";
+import { resetGlobalShortcuts, resetLocalShortcuts } from "./shortcuts";
 
-var fs = require("fs");
-
-type Rules = { [key: string]: Rule }; //类型别名
-function getEnumValue(key: RuleName): string {
-  return RuleName[key];
+export function resetAllConfig() {
+  resetLocalShortcuts();
+  resetGlobalShortcuts();
+  resetStyle();
 }
 
 class ConfigParser {
-  rules: Rules = {};
-  values: { [key: string]: any } = {};
-  defaultValues: { [key: string]: any } = {};
+  rules: Rules = new Map<Identifier, Rule>();
+  values: Map<Identifier, any> = new Map<Identifier, any>();
 
   constructor() {}
 
-  addRule(key: RuleName, rule: Rule) {
-    let keyValue = getEnumValue(key);
-    if (rule.check && !rule.check(rule.predefined)) {
-      throw "Rule " + keyValue + " is invald!";
-    }
-    this.rules[keyValue] = rule;
-    this.values[keyValue] = rule.predefined;
-    this.defaultValues[keyValue] = rule.predefined;
+  setRule(key: Identifier, rule: Rule) {
+    this.rules.set(key, rule);
+    this.values.set(key, rule.predefined);
   }
 
-  getValues() {
-    return Object.assign({}, this.values);
+  getRule(key: Identifier): Rule {
+    return <Rule>this.rules.get(key);
   }
 
-  get(key: RuleName) {
-    return this.values[getEnumValue(key)];
+  get(key: Identifier) {
+    return this.values.get(key);
   }
 
-  set(key: RuleName, value: any) {
-    let keyValue = getEnumValue(key);
-    let check = this.rules[keyValue].check;
-    if (check && !check(value)) {
-      throw `${key} check fail`;
-    } else {
-      this.values[keyValue] = value;
-    }
-  }
-
-  setByKeyValue(keyValue: string, value: any): boolean | undefined {
-    if (!ruleKeys.includes(keyValue)) {
-      return false;
-    }
-    let check = this.rules[keyValue].check;
+  set(key: Identifier, value: any) {
+    let check = this.getRule(key).check;
     if (check && !check(value)) {
       return false;
     } else {
-      if (
-        this.rules[keyValue].predefined instanceof Object &&
-        !Array.isArray(this.rules[keyValue].predefined)
-      ) {
-        this.values[keyValue] = Object.assign(this.values[keyValue], value);
-      } else {
-        this.values[keyValue] = value;
-      }
+      this.values.set(key, value);
       return true;
     }
+  }
+
+  getTooltip(key: Identifier) {
+    return this.getRule(key).msg;
   }
 
   loadValues(fileName: string): boolean {
     try {
       let values = JSON.parse(fs.readFileSync(fileName));
-      ruleKeys.forEach(keyValue => {
-        if (values[keyValue] != undefined) {
-          this.setByKeyValue(keyValue, values[keyValue]);
+      if (!values["version"] || !compatible(values["version"])) {
+        throw "version incompatible, configs have been reset";
+      }
+      for (const key of this.rules.keys()) {
+        if (values[key] != undefined) {
+          this.set(key, values[key]);
         }
-      });
+      }
       this.saveValues(fileName);
       return true;
     } catch (e) {
+      resetAllConfig();
       this.saveValues(fileName);
       return false;
     }
   }
 
   restoreDefault(fileName: string) {
-    this.values = this.defaultValues;
+    for (const [key, rule] of this.rules) {
+      this.set(key, rule.predefined);
+    }
     this.saveValues(fileName);
   }
 
   saveValues(fileName: string) {
-    fs.writeFileSync(fileName, JSON.stringify(this.values, null, 4));
+    fs.writeFileSync(fileName, JSON.stringify(mapToObj(this.values), null, 4));
   }
 }
 
-export { ConfigParser, getEnumValue };
+export { ConfigParser };

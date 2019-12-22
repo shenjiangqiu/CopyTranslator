@@ -22,7 +22,7 @@ CopyTranslator是采用 GPL v2 协议许可的开源项目，**使用完全免�
 
    帮助维护CopyTranslator的界面语言支持，详见 `区域设置` 。
 
-## 建议
+## 建议/反馈
 
    如果您有任何绝妙的想法，欢迎创建一个[Issue](https://github.com/elliottzheng/CopyTranslator/issues)与我分享。
    ::: warning

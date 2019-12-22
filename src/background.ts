@@ -1,19 +1,20 @@
 "use strict";
-import { app, protocol, Notification } from "electron";
+import { app, protocol } from "electron";
 import { installVueDevtools } from "vue-cli-plugin-electron-builder/lib";
-import { log } from "./tools/logger";
 import { Controller } from "./core/controller";
-import { EventEmitter } from "events";
+import { recognizer } from "./tools/ocr";
 const isDevelopment = process.env.NODE_ENV !== "production";
+import ShortcutCapture from "shortcut-capture";
 
 app.setAppUserModelId("com.copytranslator.copytranslator");
 
-(<any>global).log = log;
 let controller = new Controller();
 (<any>global).controller = controller;
 
 // Standard scheme must be registered before the app is ready
-protocol.registerStandardSchemes(["app"], { secure: true });
+protocol.registerSchemesAsPrivileged([
+  { scheme: "app", privileges: { standard: true, secure: true } }
+]);
 
 // Quit when all windows are closed.
 app.on("window-all-closed", () => {
@@ -24,13 +25,16 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("activate", () => {
+app.on("activate", (event, hasVisibleWindows) => {
   // On macOS it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
-  if (controller.win === null) {
+  if (!hasVisibleWindows) {
     controller.createWindow();
   }
 });
+
+// 禁用本地缓存
+app.commandLine.appendSwitch("--disable-http-cache");
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
@@ -40,6 +44,11 @@ app.on("ready", async () => {
     // Install Vue Devtools
     await installVueDevtools();
   }
+  const shortcutCapture = new ShortcutCapture();
+  (<any>global).shortcutCapture = shortcutCapture;
+  shortcutCapture.on("capture", ({ dataURL, bounds }) =>
+    recognizer.recognize(dataURL)
+  );
   controller.createWindow();
 });
 
